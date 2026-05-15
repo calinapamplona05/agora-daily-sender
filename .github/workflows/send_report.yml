@@ -1,0 +1,47 @@
+name: Send Daily Market Report
+
+on:
+  # Runs every day at 23:00 UTC = 08:00 KST
+  schedule:
+    - cron: "0 23 * * *"
+
+  # Lets you trigger a test run manually from the GitHub Actions tab
+  workflow_dispatch:
+
+jobs:
+  send-report:
+    name: Send Report via Gmail
+    runs-on: ubuntu-latest
+
+    # GitHub will email you automatically when this job fails
+    # (controlled in your GitHub notification settings — on by default)
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Send report email
+        env:
+          GMAIL_SENDER:     ${{ secrets.GMAIL_SENDER }}
+          GMAIL_PASSWORD:   ${{ secrets.GMAIL_PASSWORD }}
+          GMAIL_RECIPIENTS: ${{ secrets.GMAIL_RECIPIENTS }}
+          # SLACK_TOKEN:    ${{ secrets.SLACK_TOKEN }}      # SLACK — uncomment when ready
+          # SLACK_CHANNEL:  ${{ secrets.SLACK_CHANNEL }}   # SLACK — uncomment when ready
+        run: python send_report.py
+
+      - name: Log outcome
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ Report email sent successfully."
+          else
+            echo "❌ Job failed — check the logs above for details."
+          fi
