@@ -57,7 +57,7 @@ def find_latest_pdf(directory: str) -> str | None:
 # ---------------------------------------------------------------------------
 def build_email(sender: str, recipient: str, attachment_path: str) -> MIMEMultipart:
     today = date.today().strftime("%Y-%m-%d")
-    filename = f"Agora Research Daily Market Report — {today}.pdf"
+    filename = f"Agora Research Daily Market Report - {today}.pdf"
 
     msg = MIMEMultipart()
     msg["From"]    = sender
