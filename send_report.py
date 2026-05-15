@@ -1,7 +1,7 @@
 """
 Agora Research — Daily Market Report Sender
-Finds the latest .pdf in reports/ and emails it to recipients via Gmail SMTP.
-TO: main recipient (visible). BCC: all others (hidden from each other).
+Finds the latest .pdf in reports/ and sends each recipient their own individual email.
+Each person only sees their own address in TO — nobody sees anyone else.
 Credentials are read from environment variables (set as GitHub Secrets).
 """
 
@@ -31,8 +31,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 GMAIL_SENDER     = os.environ["GMAIL_SENDER"]       # your Gmail address
 GMAIL_PASSWORD   = os.environ["GMAIL_PASSWORD"]     # Gmail App Password (16 chars, no spaces)
-GMAIL_RECIPIENTS = os.environ["GMAIL_RECIPIENTS"]   # TO field — main recipient(s), comma-separated
-GMAIL_BCC        = os.environ.get("GMAIL_BCC", "")  # BCC field — hidden recipients, comma-separated
+GMAIL_RECIPIENTS = os.environ["GMAIL_RECIPIENTS"]   # all recipients, comma-separated — each gets their own individual email
 
 REPORTS_DIR = "reports"
 
@@ -49,23 +48,16 @@ def find_latest_pdf(directory: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Helper: build the email message
+# Helper: build a personal email addressed to one recipient only
 # ---------------------------------------------------------------------------
-def build_email(
-    sender: str,
-    recipients: list[str],
-    bcc: list[str],
-    attachment_path: str,
-) -> MIMEMultipart:
+def build_email(sender: str, recipient: str, attachment_path: str) -> MIMEMultipart:
     today = date.today().strftime("%Y-%m-%d")
     filename = os.path.basename(attachment_path)
 
     msg = MIMEMultipart()
     msg["From"]    = sender
-    msg["To"]      = ", ".join(recipients)
+    msg["To"]      = recipient          # only this person's address — no one else visible
     msg["Subject"] = f"Agora Research | Daily Market Report — {today}"
-    if bcc:
-        msg["Bcc"] = ", ".join(bcc)
 
     body = (
         f"Good morning,\n\n"
@@ -86,18 +78,12 @@ def build_email(
 
 
 # ---------------------------------------------------------------------------
-# Helper: send via Gmail SMTP with App Password
+# Helper: send one email to one recipient via Gmail SMTP
 # ---------------------------------------------------------------------------
-def send_email(
-    msg: MIMEMultipart,
-    sender: str,
-    recipients: list[str],
-    bcc: list[str],
-) -> None:
-    all_addresses = recipients + bcc
+def send_email(msg: MIMEMultipart, sender: str, recipient: str) -> None:
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(sender, GMAIL_PASSWORD)
-        server.sendmail(sender, all_addresses, msg.as_string())
+        server.sendmail(sender, [recipient], msg.as_string())
 
 
 # ---------------------------------------------------------------------------
@@ -144,28 +130,32 @@ def main() -> None:
 
     log.info("Report file found: %s", pdf_path)
 
-    # 2. Parse TO and BCC
+    # 2. Parse recipients — every person gets their own individual email
     recipients = [r.strip() for r in GMAIL_RECIPIENTS.split(",") if r.strip()]
-    bcc        = [b.strip() for b in GMAIL_BCC.split(",") if b.strip()]
 
     if not recipients:
         log.error("GMAIL_RECIPIENTS is empty. Add at least one email address.")
         raise SystemExit(1)
 
-    log.info("TO  (%d): %s", len(recipients), ", ".join(recipients))
-    if bcc:
-        log.info("BCC (%d): %s", len(bcc), ", ".join(bcc))
+    log.info("Sending individual emails to %d recipient(s).", len(recipients))
 
-    # 3. Build and send
-    msg = build_email(GMAIL_SENDER, recipients, bcc, pdf_path)
-    try:
-        send_email(msg, GMAIL_SENDER, recipients, bcc)
-        log.info("Email sent successfully.")
-        # notify_slack(f":white_check_mark: Daily report sent to {len(recipients)} recipient(s) + {len(bcc)} BCC.")  # SLACK
-    except Exception as exc:
-        log.error("Failed to send email: %s", exc)
-        # notify_slack(f":x: Email send failed: {exc}")  # SLACK
+    # 3. Send one email per recipient — each person only sees their own address
+    failed = []
+    for recipient in recipients:
+        try:
+            msg = build_email(GMAIL_SENDER, recipient, pdf_path)
+            send_email(msg, GMAIL_SENDER, recipient)
+            log.info("  ✓ Sent to %s", recipient)
+        except Exception as exc:
+            log.error("  ✗ Failed to send to %s: %s", recipient, exc)
+            failed.append(recipient)
+
+    if failed:
+        log.error("Failed to send to: %s", ", ".join(failed))
+        # notify_slack(f":x: Email failed for: {', '.join(failed)}")  # SLACK
         raise SystemExit(1)
+
+    # notify_slack(f":white_check_mark: Daily report sent to {len(recipients)} recipient(s).")  # SLACK
 
     log.info("=== Done ===")
 

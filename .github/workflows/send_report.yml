@@ -33,7 +33,6 @@ jobs:
           GMAIL_SENDER:     ${{ secrets.GMAIL_SENDER }}
           GMAIL_PASSWORD:   ${{ secrets.GMAIL_PASSWORD }}
           GMAIL_RECIPIENTS: ${{ secrets.GMAIL_RECIPIENTS }}
-          GMAIL_BCC:        ${{ secrets.GMAIL_BCC }}
           # SLACK_TOKEN:    ${{ secrets.SLACK_TOKEN }}      # SLACK — uncomment when ready
           # SLACK_CHANNEL:  ${{ secrets.SLACK_CHANNEL }}   # SLACK — uncomment when ready
         run: python send_report.py
