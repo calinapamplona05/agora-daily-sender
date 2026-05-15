@@ -1,5 +1,6 @@
 token.json
 credentials.json
+get_linkedin_token.py
 *.env
 .env
 __pycache__/
