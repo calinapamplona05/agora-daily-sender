@@ -36,7 +36,7 @@ GMAIL_PASSWORD   = os.environ["GMAIL_PASSWORD"]     # Gmail App Password (16 cha
 GMAIL_RECIPIENTS = os.environ["GMAIL_RECIPIENTS"]   # all recipients, comma-separated — each gets their own individual email
 
 LINKEDIN_ACCESS_TOKEN = os.environ.get("LINKEDIN_ACCESS_TOKEN", "")
-LINKEDIN_ORG_ID       = os.environ.get("LINKEDIN_ORG_ID", "")
+LINKEDIN_PERSON_ID    = os.environ.get("LINKEDIN_PERSON_ID", "")
 
 REPORTS_DIR = "reports"
 
@@ -92,50 +92,103 @@ def send_email(msg: MIMEMultipart, sender: str, recipient: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# LinkedIn — post a daily announcement to the Agora Research company page
+# LinkedIn — upload PDF and post as document to the company page
 # ---------------------------------------------------------------------------
+def _linkedin_headers() -> dict:
+    return {
+        "Authorization": f"Bearer {LINKEDIN_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+        "LinkedIn-Version": "202503",
+        "X-Restli-Protocol-Version": "2.0.0",
+    }
+
+
+def _linkedin_request(url: str, data: bytes, headers: dict) -> dict:
+    req = urllib.request.Request(url, data=data, headers=headers)
+    try:
+        with urllib.request.urlopen(req) as resp:
+            body = resp.read()
+            return json.loads(body) if body else {}
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"HTTP {e.code}: {e.read().decode()}") from e
+
+
 def post_linkedin(pdf_path: str) -> None:
-    if not LINKEDIN_ACCESS_TOKEN or not LINKEDIN_ORG_ID:
+    if not LINKEDIN_ACCESS_TOKEN or not LINKEDIN_PERSON_ID:
         log.warning("LinkedIn secrets not set — skipping LinkedIn post.")
         return
 
     today = date.today().strftime("%Y-%m-%d")
-    message = (
-        f"📊 Agora Research Daily Market Report — {today}\n\n"
-        f"Today's market report has been distributed to subscribers.\n\n"
-        f"#AgoraResearch #MarketReport #Finance"
-    )
+    filename = os.path.basename(pdf_path)
+    author_urn = f"urn:li:person:{LINKEDIN_PERSON_ID}"
 
-    data = json.dumps({
-        "author": f"urn:li:organization:{LINKEDIN_ORG_ID}",
-        "lifecycleState": "PUBLISHED",
-        "specificContent": {
-            "com.linkedin.ugc.ShareContent": {
-                "shareCommentary": {"text": message},
-                "shareMediaCategory": "NONE",
-            }
-        },
-        "visibility": {
-            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
-        },
-    }).encode()
-
-    req = urllib.request.Request(
-        "https://api.linkedin.com/v2/ugcPosts",
-        data=data,
-        headers={
-            "Authorization": f"Bearer {LINKEDIN_ACCESS_TOKEN}",
-            "Content-Type": "application/json",
-            "X-Restli-Protocol-Version": "2.0.0",
-        },
-    )
     try:
-        with urllib.request.urlopen(req) as resp:
-            result = json.loads(resp.read())
-            log.info("LinkedIn post published: %s", result.get("id", "ok"))
-    except urllib.error.HTTPError as e:
-        body = e.read().decode()
-        log.error("LinkedIn post failed (%s): %s", e.code, body)
+        # Step 1 — initialize document upload
+        log.info("LinkedIn: initializing document upload...")
+        init_data = json.dumps({
+            "initializeUploadRequest": {"owner": author_urn}
+        }).encode()
+        init_resp = _linkedin_request(
+            "https://api.linkedin.com/rest/documents?action=initializeUpload",
+            init_data,
+            _linkedin_headers(),
+        )
+        upload_url  = init_resp["value"]["uploadUrl"]
+        document_urn = init_resp["value"]["document"]
+        log.info("LinkedIn: upload URL received.")
+
+        # Step 2 — upload the PDF binary to the pre-signed URL (no auth header)
+        log.info("LinkedIn: uploading PDF...")
+        with open(pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+        upload_req = urllib.request.Request(
+            upload_url,
+            data=pdf_bytes,
+            headers={
+                "Authorization": f"Bearer {LINKEDIN_ACCESS_TOKEN}",
+                "Content-Type": "application/octet-stream",
+            },
+            method="PUT",
+        )
+        with urllib.request.urlopen(upload_req):
+            pass
+        log.info("LinkedIn: PDF uploaded.")
+
+        # Step 3 — create the document post
+        log.info("LinkedIn: creating post...")
+        commentary = (
+            f"📊 Agora Research Daily Market Report — {today}\n\n"
+            f"Today's market report is now available.\n\n"
+            f"#AgoraResearch #MarketReport #Finance"
+        )
+        post_data = json.dumps({
+            "author": author_urn,
+            "commentary": commentary,
+            "visibility": "PUBLIC",
+            "distribution": {
+                "feedDistribution": "MAIN_FEED",
+                "targetEntities": [],
+                "thirdPartyDistributionChannels": [],
+            },
+            "content": {
+                "media": {
+                    "id": document_urn,
+                    "title": f"Agora Research Daily Market Report — {today}",
+                }
+            },
+            "lifecycleState": "PUBLISHED",
+            "isReshareDisabledByAuthor": False,
+        }).encode()
+
+        post_resp = _linkedin_request(
+            "https://api.linkedin.com/rest/posts",
+            post_data,
+            _linkedin_headers(),
+        )
+        log.info("LinkedIn: post published successfully. ID: %s", post_resp.get("id", "ok"))
+
+    except RuntimeError as e:
+        log.error("LinkedIn post failed: %s", e)
 
 
 # ---------------------------------------------------------------------------

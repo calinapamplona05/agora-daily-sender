@@ -34,7 +34,7 @@ jobs:
           GMAIL_PASSWORD:   ${{ secrets.GMAIL_PASSWORD }}
           GMAIL_RECIPIENTS:      ${{ secrets.GMAIL_RECIPIENTS }}
           LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
-          LINKEDIN_ORG_ID:       ${{ secrets.LINKEDIN_ORG_ID }}
+          LINKEDIN_PERSON_ID:    ${{ secrets.LINKEDIN_PERSON_ID }}
           # SLACK_TOKEN:    ${{ secrets.SLACK_TOKEN }}      # SLACK — uncomment when ready
           # SLACK_CHANNEL:  ${{ secrets.SLACK_CHANNEL }}   # SLACK — uncomment when ready
         run: python send_report.py
