@@ -1,11 +1,8 @@
 name: Send Daily Market Report
 
 on:
-  # Runs every day at 23:00 UTC = 08:00 KST
-  schedule:
-    - cron: "0 23 * * *"
-
-  # Lets you trigger a test run manually from the GitHub Actions tab
+  # Triggered daily at 08:00 KST by cron-job.org via workflow_dispatch
+  # (removed GitHub's built-in schedule — cron-job.org is more reliable)
   workflow_dispatch:
 
 jobs:
