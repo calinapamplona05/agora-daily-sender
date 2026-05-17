@@ -10,6 +10,7 @@ import glob
 import json
 import smtplib
 import logging
+import subprocess
 import urllib.request
 from datetime import date
 from email.mime.multipart import MIMEMultipart
@@ -42,13 +43,27 @@ REPORTS_DIR = "reports"
 
 
 # ---------------------------------------------------------------------------
-# Helper: find the most recently modified .pdf in reports/
+# Helper: find the most recently committed .pdf in reports/
+# Uses git log so it works correctly in GitHub Actions (where all file
+# timestamps are identical after checkout).
 # ---------------------------------------------------------------------------
 def find_latest_pdf(directory: str) -> str | None:
     pattern = os.path.join(directory, "*.pdf")
     files = glob.glob(pattern)
     if not files:
         return None
+    try:
+        result = subprocess.run(
+            ["git", "log", "--pretty=format:", "--name-only", "--diff-filter=AM", "--", pattern],
+            capture_output=True, text=True, check=True,
+        )
+        for line in result.stdout.strip().split("\n"):
+            line = line.strip()
+            if line.endswith(".pdf") and os.path.exists(line):
+                return line
+    except Exception:
+        pass
+    # Fallback to mtime if git is unavailable
     return max(files, key=os.path.getmtime)
 
 
